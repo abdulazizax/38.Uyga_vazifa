@@ -13,5 +13,6 @@ type AlbumsStorageI interface {
 	GetAlbumsByTitle(ctx context.Context, title string) (albums []m.Album, err error)
 	GetAlbumsByArtist(ctx context.Context, artist string) (albums []m.Album, err error)
 	GetAlbumsByPrice(ctx context.Context, price float64) (albums []m.Album, err error)
+	GetAlbumsByGenre(ctx context.Context, genre string) (albums []m.Album, err error)
 	DeletAlbumsById(ctx context.Context, id string) error
 }

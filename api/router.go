@@ -28,6 +28,7 @@ func New(option Option) *gin.Engine {
 	album.GET("/title/:title", handler.GetAlbumByTitle)
 	album.GET("/artist/:artist", handler.GetAlbumByArtist)
 	album.GET("/price/:price", handler.GetAlbumByPrice)
+	album.GET("/genre/:genre", handler.GetAlbumByGenre)
 	album.DELETE("/:id", handler.DeleteAlbumById)
 
 	return router

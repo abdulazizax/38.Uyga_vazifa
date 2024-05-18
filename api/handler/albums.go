@@ -64,6 +64,10 @@ func (h *handler) GetAlbums(c *gin.Context) {
 		c.IndentedJSON(http.StatusBadRequest, gin.H{"error": err})
 		return
 	}
+	if len(album) == 0 {
+		c.IndentedJSON(http.StatusBadGateway, gin.H{"message": "Result not found!"})
+		return
+	}
 	c.IndentedJSON(http.StatusOK, album)
 }
 
@@ -75,6 +79,10 @@ func (h *handler) GetAlbumByTitle(c *gin.Context) {
 		c.IndentedJSON(http.StatusBadRequest, gin.H{"error": err})
 		return
 	}
+	if len(album) == 0 {
+		c.IndentedJSON(http.StatusBadGateway, gin.H{"message": "Result not found!"})
+		return
+	}
 	c.IndentedJSON(http.StatusOK, album)
 }
 
@@ -84,6 +92,25 @@ func (h *handler) GetAlbumByArtist(c *gin.Context) {
 	album, err := h.storage.Album().GetAlbumsByArtist(c.Request.Context(), artist)
 	if err != nil {
 		c.IndentedJSON(http.StatusBadRequest, gin.H{"error": err})
+		return
+	}
+	if len(album) == 0 {
+		c.IndentedJSON(http.StatusBadGateway, gin.H{"message": "Result not found!"})
+		return
+	}
+	c.IndentedJSON(http.StatusOK, album)
+}
+
+func (h *handler) GetAlbumByGenre(c *gin.Context) {
+	genre := strings.ToLower(c.Param("genre"))
+
+	album, err := h.storage.Album().GetAlbumsByGenre(c.Request.Context(), genre)
+	if err != nil {
+		c.IndentedJSON(http.StatusBadRequest, gin.H{"error": err})
+		return
+	}
+	if len(album) == 0 {
+		c.IndentedJSON(http.StatusBadGateway, gin.H{"message": "Result not found!"})
 		return
 	}
 	c.IndentedJSON(http.StatusOK, album)
@@ -102,6 +129,10 @@ func (h *handler) GetAlbumByPrice(c *gin.Context) {
 	album, err := h.storage.Album().GetAlbumsByPrice(c.Request.Context(), cprice)
 	if err != nil {
 		c.IndentedJSON(http.StatusBadRequest, gin.H{"error": err})
+		return
+	}
+	if len(album) == 0 {
+		c.IndentedJSON(http.StatusBadGateway, gin.H{"message": "Result not found!"})
 		return
 	}
 	c.IndentedJSON(http.StatusOK, album)

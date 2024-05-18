@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"fmt"
 	m "gin/models"
 	"log"
 	"strings"
@@ -20,17 +21,30 @@ func NewAlbumsrepo(db *sqlx.DB) *AlbumRepo {
 }
 
 func (a *AlbumRepo) CreateAlbum(ctx context.Context, alb m.Album) error {
+	genre := m.Genre{}
 	tx, err := a.DB.Begin()
 	if err != nil {
-		log.Fatal("Error beginning transaction: ", err)
+		return err
 	}
 
 	query := `
+		SELECT id FROM genres WHERE name = $1	
+	`
+	row := tx.QueryRowContext(ctx, query, strings.ToLower(alb.Genre))
+
+	err = row.Scan(&genre.Id)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	query = `
 		INSERT INTO albums (
 			title, 
 			artist, 
-			price) 
-		VALUES(	$1, $2, $3)
+			price,
+			genre_id) 
+		VALUES(	$1, $2, $3, $4)
 		RETURNING
 			id,         
 			title,       
@@ -38,7 +52,7 @@ func (a *AlbumRepo) CreateAlbum(ctx context.Context, alb m.Album) error {
 			price
 	`
 
-	_, err = tx.ExecContext(ctx, query, strings.ToLower(alb.Title), strings.ToLower(alb.Artist), alb.Price)
+	_, err = tx.ExecContext(ctx, query, strings.ToLower(alb.Title), strings.ToLower(alb.Artist), alb.Price, genre.Id)
 	if err != nil {
 		tx.Rollback()
 		return err
@@ -56,13 +70,16 @@ func (a *AlbumRepo) CreateAlbum(ctx context.Context, alb m.Album) error {
 
 func (a *AlbumRepo) GetAlbumsById(ctx context.Context, id string) (m.Album, error) {
 	query := `
-	SELECT * FROM albums WHERE id = $1
+		SELECT albums.title, albums.artist, albums.price, genres.name AS genre
+		FROM albums
+		INNER JOIN genres ON albums.genre_id = genres.id
+		WHERE albums.id = $1;
 	`
 	row := a.DB.QueryRowContext(ctx, query, id)
 
 	album := m.Album{}
 
-	err := row.Scan(&album.Id, &album.Title, &album.Artist, &album.Price)
+	err := row.Scan(&album.Title, &album.Artist, &album.Price, &album.Genre)
 	if err != nil {
 		return album, err
 	}
@@ -72,7 +89,9 @@ func (a *AlbumRepo) GetAlbumsById(ctx context.Context, id string) (m.Album, erro
 
 func (a *AlbumRepo) GetAlbums(ctx context.Context) (albums []m.Album, err error) {
 	query := `
-		SELECT * FROM albums;
+		SELECT albums.title, albums.artist, albums.price, genres.name AS genre_name
+		FROM albums
+		INNER JOIN genres ON albums.genre_id = genres.id;
 	`
 	row, err := a.DB.QueryContext(ctx, query)
 	if err != nil {
@@ -81,9 +100,10 @@ func (a *AlbumRepo) GetAlbums(ctx context.Context) (albums []m.Album, err error)
 
 	for row.Next() {
 		album := m.Album{}
-		err := row.Scan(&album.Id, &album.Title, &album.Artist, &album.Price)
+		err := row.Scan(&album.Title, &album.Artist, &album.Price, &album.Genre)
 		if err != nil {
-			log.Fatal("Error scanning sql query: ", err)
+			log.Println("Error scanning sql query: ", err)
+			return albums, err
 		}
 		albums = append(albums, album)
 	}
@@ -92,33 +112,48 @@ func (a *AlbumRepo) GetAlbums(ctx context.Context) (albums []m.Album, err error)
 
 func (a *AlbumRepo) UpdateAlbumById(ctx context.Context, alb m.Album, id string) (m.Album, error) {
 	album := m.Album{}
-
+	genre := m.Genre{}
 	tx, err := a.DB.Begin()
 	if err != nil {
 		return album, err
 	}
 
 	query := `
+		SELECT id FROM genres WHERE name = $1	
+	`
+	row := tx.QueryRowContext(ctx, query, strings.ToLower(alb.Genre))
+
+	err = row.Scan(&genre.Id)
+	if err != nil {
+		fmt.Println("Eror 1")
+		tx.Rollback()
+		return album, err
+	}
+
+	query = `
 		UPDATE albums
-		SET title = $1, artist = $2, price = $3
-		WHERE id = $4
+		SET title = $1, artist = $2, price = $3, genre_id = $4                                     
+		WHERE id = $5
 		RETURNING
 			id,         
 			title,       
 			artist,      
-			price
+			price,
+			(SELECT name FROM genres WHERE id = albums.genre_id) AS genre;
 	`
 
-	row := tx.QueryRowContext(ctx, query, alb.Title, alb.Artist, alb.Price, id)
+	row = tx.QueryRowContext(ctx, query, strings.ToLower(alb.Title), strings.ToLower(alb.Artist), alb.Price, genre.Id, id)
 
-	err = row.Scan(&album.Id, &album.Title, &album.Artist, &album.Price)
+	err = row.Scan(&album.Id, &album.Title, &album.Artist, &album.Price, &album.Genre)
 	if err != nil {
+		fmt.Println("Eror 2")
 		tx.Rollback()
 		return album, err
 	}
 
 	err = tx.Commit()
 	if err != nil {
+		fmt.Println("Eror 3")
 		return album, err
 	}
 
@@ -127,7 +162,10 @@ func (a *AlbumRepo) UpdateAlbumById(ctx context.Context, alb m.Album, id string)
 
 func (a *AlbumRepo) GetAlbumsByTitle(ctx context.Context, title string) (albums []m.Album, err error) {
 	query := `
-        SELECT * FROM albums WHERE title = $1
+		SELECT albums.title, albums.artist, albums.price, genres.name AS genre
+		FROM albums
+		INNER JOIN genres ON albums.genre_id = genres.id
+		WHERE albums.title = $1;	
     `
 	rows, err := a.DB.QueryContext(ctx, query, title)
 	if err != nil {
@@ -137,7 +175,7 @@ func (a *AlbumRepo) GetAlbumsByTitle(ctx context.Context, title string) (albums 
 
 	for rows.Next() {
 		var album m.Album
-		err := rows.Scan(&album.Id, &album.Title, &album.Artist, &album.Price)
+		err := rows.Scan(&album.Title, &album.Artist, &album.Price, &album.Genre)
 		if err != nil {
 			return nil, err
 		}
@@ -152,7 +190,10 @@ func (a *AlbumRepo) GetAlbumsByTitle(ctx context.Context, title string) (albums 
 
 func (a *AlbumRepo) GetAlbumsByArtist(ctx context.Context, artist string) (albums []m.Album, err error) {
 	query := `
-        SELECT * FROM albums WHERE artist = $1
+		SELECT albums.title, albums.artist, albums.price, genres.name AS genre
+		FROM albums
+		INNER JOIN genres ON albums.genre_id = genres.id
+		WHERE albums.artist = $1;	
     `
 	rows, err := a.DB.QueryContext(ctx, query, artist)
 	if err != nil {
@@ -162,7 +203,7 @@ func (a *AlbumRepo) GetAlbumsByArtist(ctx context.Context, artist string) (album
 
 	for rows.Next() {
 		var album m.Album
-		err := rows.Scan(&album.Id, &album.Title, &album.Artist, &album.Price)
+		err := rows.Scan(&album.Title, &album.Artist, &album.Price, &album.Genre)
 		if err != nil {
 			return nil, err
 		}
@@ -177,7 +218,10 @@ func (a *AlbumRepo) GetAlbumsByArtist(ctx context.Context, artist string) (album
 
 func (a *AlbumRepo) GetAlbumsByPrice(ctx context.Context, price float64) (albums []m.Album, err error) {
 	query := `
-        SELECT * FROM albums WHERE price = $1
+		SELECT albums.title, albums.artist, albums.price, genres.name AS genre
+		FROM albums
+		INNER JOIN genres ON albums.genre_id = genres.id
+		WHERE albums.price = $1;
     `
 	rows, err := a.DB.QueryContext(ctx, query, price)
 	if err != nil {
@@ -187,7 +231,35 @@ func (a *AlbumRepo) GetAlbumsByPrice(ctx context.Context, price float64) (albums
 
 	for rows.Next() {
 		var album m.Album
-		err := rows.Scan(&album.Id, &album.Title, &album.Artist, &album.Price)
+		err := rows.Scan(&album.Title, &album.Artist, &album.Price, &album.Genre)
+		if err != nil {
+			return nil, err
+		}
+		albums = append(albums, album)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return albums, nil
+}
+
+func (a *AlbumRepo) GetAlbumsByGenre(ctx context.Context, genre string) (albums []m.Album, err error) {
+	query := `
+		SELECT albums.title, albums.artist, albums.price, genres.name AS genre
+		FROM albums
+		INNER JOIN genres ON albums.genre_id = genres.id
+		WHERE genres.name = $1;	
+    `
+	rows, err := a.DB.QueryContext(ctx, query, genre)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var album m.Album
+		err := rows.Scan(&album.Title, &album.Artist, &album.Price, &album.Genre)
 		if err != nil {
 			return nil, err
 		}
